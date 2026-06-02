@@ -2,6 +2,7 @@
 //!
 //! `plan` is the default subcommand (running `rollout` with no args equals
 //! `rollout plan`). `apply` is the only mutating path.
+//! `install` copies a binary to its dest and restarts the owning daemon.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -11,6 +12,7 @@ use clap::{Args, Parser, Subcommand};
 use crate::error::RolloutError;
 use crate::fleet::{self, FleetConfig};
 use crate::health::check_window_guard;
+use crate::install::{run_install, InstallArgs, OutputFormat};
 use crate::restart::{restart_daemon, RestartResult, DEFAULT_HEALTHCHECK_TIMEOUT_SECS};
 use crate::scan::{collect_stale, parse_stale_json, BinstaleEntry, ScanSource};
 
@@ -44,6 +46,14 @@ pub(crate) enum Command {
     /// Per daemon: build → install → SIGTERM → wait → relaunch → healthcheck.
     /// Stops on the first daemon that fails to re-register.
     Apply(ApplyArgs),
+
+    /// Install a freshly-built binary to its dest and restart the owning daemon.
+    ///
+    /// Copies `<binary>` to `--dest` via atomic temp-then-rename (mode 0755),
+    /// finds the systemd-user unit whose ExecStart points at dest, and restarts it
+    /// via `agorabus reload --build` (for agorabus) or `systemctl --user restart`
+    /// (for all other daemons). Emits a structured verdict.
+    Install(InstallCliArgs),
 }
 
 impl Default for Command {
@@ -97,6 +107,31 @@ pub(crate) struct ApplyArgs {
     /// Healthcheck timeout per daemon. Default: 30 seconds.
     #[arg(long, value_name = "SECS", default_value_t = DEFAULT_HEALTHCHECK_TIMEOUT_SECS)]
     pub healthcheck_timeout: u64,
+}
+
+/// Arguments for `rollout install`.
+#[derive(Debug, Args)]
+pub(crate) struct InstallCliArgs {
+    /// Path to the freshly-built binary to install.
+    #[arg(value_name = "BINARY")]
+    pub binary: PathBuf,
+
+    /// Destination install path (e.g. `~/.local/bin/recalld`).
+    #[arg(long, value_name = "PATH")]
+    pub dest: PathBuf,
+
+    /// Safety guard: refuse to restart voice-set daemons unless the bus has
+    /// been quiet for this duration. Examples: `30s`, `2m`.
+    #[arg(long, value_name = "DURATION", value_parser = parse_duration, default_value = "5s")]
+    pub restart_window: Duration,
+
+    /// Print what would happen without writing any files or restarting daemons.
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Output format: json (default) or table.
+    #[arg(long, value_name = "FORMAT", default_value = "json")]
+    pub format: String,
 }
 
 /// Parse a human-readable duration like "30s", "2m", "1h".
@@ -270,4 +305,25 @@ fn filter_only(entries: Vec<BinstaleEntry>, only: Option<&str>) -> Vec<BinstaleE
         Some(name) => entries.into_iter().filter(|e| e.comm == name).collect(),
         None => entries,
     }
+}
+
+/// Run the `install` subcommand: copy binary and restart the owning daemon.
+///
+/// # Errors
+///
+/// Returns an error if the binary cannot be read, the dest parent does not
+/// exist, or the window guard blocks a voice-set restart.
+pub(crate) fn run_install_cmd(args: &InstallCliArgs) -> Result<(), RolloutError> {
+    let fmt = args
+        .format
+        .parse::<OutputFormat>()
+        .map_err(|e| RolloutError::FleetConfig(e))?;
+    let install_args = InstallArgs {
+        binary: args.binary.clone(),
+        dest: args.dest.clone(),
+        restart_window: args.restart_window,
+        dry_run: args.dry_run,
+        format: fmt,
+    };
+    run_install(&install_args)
 }

@@ -22,6 +22,7 @@ mod cli;
 mod error;
 mod fleet;
 mod health;
+mod install;
 mod restart;
 mod scan;
 
@@ -33,6 +34,7 @@ fn main() -> ExitCode {
     let result = match cli.command.unwrap_or_default() {
         Command::Plan(args) => cli::run_plan(&args),
         Command::Apply(args) => cli::run_apply(&args),
+        Command::Install(args) => cli::run_install_cmd(&args),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

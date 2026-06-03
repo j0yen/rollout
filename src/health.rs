@@ -99,27 +99,23 @@ pub(crate) fn check_window_guard(
 
     // Sample: run `agorabus subscribe wm.dialog.turn.*` for sample_duration,
     // capture output. If any line appears, there's activity.
-    let mut child = match std::process::Command::new("agorabus")
+    let Ok(mut child) = std::process::Command::new("agorabus")
         .args(["subscribe", "wm.dialog.turn.*"])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
-    {
-        Ok(c) => c,
-        Err(_) => {
-            // If agorabus is not available, let the restart proceed (conservative
-            // fail-open: if we can't check, we don't block).
-            return Ok(());
-        }
+    else {
+        // If agorabus is not available, let the restart proceed (conservative
+        // fail-open: if we can't check, we don't block).
+        return Ok(());
     };
 
     std::thread::sleep(sample_duration);
 
     // Kill the subscriber after sample_duration.
     let _ = child.kill();
-    let output = match child.wait_with_output() {
-        Ok(o) => o,
-        Err(_) => return Ok(()), // fail-open
+    let Ok(output) = child.wait_with_output() else {
+        return Ok(()); // fail-open
     };
 
     // Any non-empty output means there was activity.

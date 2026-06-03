@@ -49,14 +49,14 @@ fn default_build_cmd() -> String {
     "cargo build --release".to_owned()
 }
 
-fn default_grace_period() -> u64 {
+const fn default_grace_period() -> u64 {
     5
 }
 
 impl DaemonRecipe {
     /// Return the healthcheck command, using the default agorabus peers check if not set.
     #[must_use]
-    pub fn healthcheck_cmd(&self) -> String {
+    pub(crate) fn healthcheck_cmd(&self) -> String {
         self.healthcheck.clone().unwrap_or_else(|| {
             format!(
                 "agorabus peers | jq -e '[.[].name] | map(select(. == \"{}\")) | length > 0'",
@@ -79,7 +79,8 @@ pub(crate) struct FleetConfig {
     /// Daemon recipes indexed by name.
     recipes: HashMap<String, DaemonRecipe>,
     /// Source path for error messages.
-    pub source_path: PathBuf,
+    #[allow(dead_code)]
+    source_path: PathBuf,
 }
 
 impl FleetConfig {
@@ -88,7 +89,7 @@ impl FleetConfig {
     /// # Errors
     ///
     /// Returns an error if the file cannot be read or parsed.
-    pub fn load(path: &Path) -> Result<Self, RolloutError> {
+    pub(crate) fn load(path: &Path) -> Result<Self, RolloutError> {
         let contents = std::fs::read_to_string(path).map_err(|e| {
             RolloutError::FleetConfig(format!("cannot read {}: {e}", path.display()))
         })?;
@@ -107,7 +108,7 @@ impl FleetConfig {
 
     /// Look up a recipe by daemon name.
     #[must_use]
-    pub fn get(&self, name: &str) -> Option<&DaemonRecipe> {
+    pub(crate) fn get(&self, name: &str) -> Option<&DaemonRecipe> {
         self.recipes.get(name)
     }
 
@@ -119,7 +120,7 @@ impl FleetConfig {
     /// # Errors
     ///
     /// Returns an error if any daemon name is not in the fleet config.
-    pub fn validate_names<'a>(
+    pub(crate) fn validate_names<'a>(
         &self,
         names: impl Iterator<Item = &'a str>,
     ) -> Result<(), RolloutError> {

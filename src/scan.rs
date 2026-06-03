@@ -25,7 +25,7 @@ pub(crate) struct BinstaleEntry {
 impl BinstaleEntry {
     /// Returns `true` if this entry is stale (i.e., should be acted on).
     #[must_use]
-    pub fn is_stale(&self) -> bool {
+    pub(crate) fn is_stale(&self) -> bool {
         self.verdict != "fresh"
     }
 }

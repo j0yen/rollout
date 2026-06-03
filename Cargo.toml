@@ -33,13 +33,15 @@ mem_forget = "deny"
 as_conversions = "warn"
 float_arithmetic = "warn"
 dbg_macro = "deny"
-print_stdout = "warn"
-print_stderr = "warn"
+print_stdout = "allow"
+print_stderr = "allow"
 
 # Tame pedantic noise without weakening BAD_RUST coverage
 module_name_repetitions = "allow"
 missing_errors_doc = "warn"
 missing_panics_doc = "warn"
+redundant_pub_crate = "allow"
+option_if_let_else = "allow"
 
 [profile.dev]
 opt-level = 0

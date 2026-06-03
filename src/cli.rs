@@ -50,7 +50,7 @@ pub(crate) enum Command {
     /// Install a freshly-built binary to its dest and restart the owning daemon.
     ///
     /// Copies `<binary>` to `--dest` via atomic temp-then-rename (mode 0755),
-    /// finds the systemd-user unit whose ExecStart points at dest, and restarts it
+    /// finds the systemd-user unit whose `ExecStart` points at dest, and restarts it
     /// via `agorabus reload --build` (for agorabus) or `systemctl --user restart`
     /// (for all other daemons). Emits a structured verdict.
     Install(InstallCliArgs),
@@ -321,7 +321,7 @@ pub(crate) fn run_install_cmd(args: &InstallCliArgs) -> Result<(), RolloutError>
     let fmt = args
         .format
         .parse::<OutputFormat>()
-        .map_err(|e| RolloutError::FleetConfig(e))?;
+        .map_err(RolloutError::FleetConfig)?;
     let install_args = InstallArgs {
         binary: args.binary.clone(),
         dest: args.dest.clone(),

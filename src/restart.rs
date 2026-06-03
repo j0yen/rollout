@@ -21,19 +21,21 @@ pub(crate) const DEFAULT_POLL_INTERVAL_MS: u64 = 500;
 #[derive(Debug, Clone)]
 pub(crate) struct RestartResult {
     /// Daemon name.
-    pub name: String,
+    #[allow(dead_code)]
+    pub(crate) name: String,
     /// PID before restart.
-    pub old_pid: u32,
+    pub(crate) old_pid: u32,
     /// PID after relaunch (if known).
-    pub new_pid: Option<u32>,
+    pub(crate) new_pid: Option<u32>,
     /// Unix timestamp (ms) when the restart step started.
-    pub start_ms: u128,
+    pub(crate) start_ms: u128,
     /// Unix timestamp (ms) when the restart step ended.
-    pub end_ms: u128,
+    pub(crate) end_ms: u128,
     /// Whether the restart succeeded (daemon re-registered).
-    pub success: bool,
+    #[allow(dead_code)]
+    pub(crate) success: bool,
     /// Whether SIGKILL was required (process ignored SIGTERM).
-    pub sigkill_used: bool,
+    pub(crate) sigkill_used: bool,
 }
 
 /// Execute the full restart sequence for one daemon.

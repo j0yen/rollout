@@ -27,7 +27,6 @@ mod restart;
 mod scan;
 
 use cli::{Cli, Command};
-use error::RolloutError;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();

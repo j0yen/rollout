@@ -174,7 +174,9 @@ pub(crate) fn run_plan(args: &PlanArgs) -> Result<(), RolloutError> {
     println!("rollout plan: {} stale daemon(s) found", stale.len());
     println!();
     for (i, entry) in stale.iter().enumerate() {
-        let recipe = fleet.get(&entry.comm).expect("validated above");
+        let recipe = fleet.get(&entry.comm).ok_or_else(|| RolloutError::UnknownDaemons {
+            names: vec![entry.comm.clone()],
+        })?;
         println!(
             "[{}/{}] {} (pid={}, verdict={})",
             i + 1,
@@ -222,7 +224,9 @@ pub(crate) fn run_apply(args: &ApplyArgs) -> Result<(), RolloutError> {
     let mut results: Vec<RestartResult> = Vec::new();
 
     for (i, entry) in stale.iter().enumerate() {
-        let recipe = fleet.get(&entry.comm).expect("validated above");
+        let recipe = fleet.get(&entry.comm).ok_or_else(|| RolloutError::UnknownDaemons {
+            names: vec![entry.comm.clone()],
+        })?;
 
         println!(
             "rollout apply [{}/{}]: starting {} (pid={})",

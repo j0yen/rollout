@@ -7,6 +7,7 @@
 //! `agorabus subscribe` sample to detect recent `wm.dialog.turn.*`
 //! activity before restarting voice-set daemons.
 
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use crate::error::RolloutError;
@@ -14,12 +15,25 @@ use crate::error::RolloutError;
 /// Voice-set daemon name pattern for the `--window` guard.
 const VOICE_SET_PATTERN: &str = r"^wm-(dialog|stt|tts)$";
 
+/// Static compiled regex for the voice-set pattern.
+///
+/// # Panics
+///
+/// Panics if `VOICE_SET_PATTERN` is not a valid regex — this is a programmer
+/// error and can only happen if the constant is changed to an invalid pattern.
+#[allow(clippy::panic)]
+fn voice_set_regex() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(VOICE_SET_PATTERN)
+            .unwrap_or_else(|e| panic!("VOICE_SET_PATTERN compile error: {e}"))
+    })
+}
+
 /// Check whether a daemon name is in the voice set.
 #[must_use]
 pub(crate) fn is_voice_daemon(name: &str) -> bool {
-    let re = regex::Regex::new(VOICE_SET_PATTERN)
-        .expect("VOICE_SET_PATTERN is a valid regex literal");
-    re.is_match(name)
+    voice_set_regex().is_match(name)
 }
 
 /// Poll the healthcheck command until it exits 0 or `timeout` elapses.

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+Add integration tests proving acceptance criteria 2, 3, 5, 6, and 7
+(`tests/acceptance_ac2_3_5_6_7.rs`): `apply --only` restart-with-new-pid,
+strict one-at-a-time serialization, stop-on-healthcheck-failure (no cascade),
+SIGTERM-then-SIGKILL escalation against an uncooperative fixture, and the
+`--window` voice-set guard (blocks on bus activity, allows when quiet) via a
+stub `agorabus` on PATH. All previously-implemented-but-unproven ACs are now
+green.
+
 ## v0.2.0 — 2026-06-02
 
 Add `rollout install <binary> --dest <path>`: atomic binary install + systemd-user daemon restart.

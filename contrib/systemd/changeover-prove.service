@@ -1,0 +1,15 @@
+[Unit]
+Description=Seed rollout proof ledger via changeover probe (oneshot)
+Documentation=https://github.com/j0yen/rollout
+# Ensure agorabus is reachable before we probe.
+After=agorabus.service
+
+[Service]
+Type=oneshot
+# Prove every daemon in fleet.toml; exit code propagates to the timer log.
+ExecStart=%h/.local/bin/rollout prove --all
+# Keep stdout/stderr in the journal.
+StandardOutput=journal
+StandardError=journal
+# Never auto-restart a oneshot; the timer handles re-runs.
+Restart=no

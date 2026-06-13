@@ -1,0 +1,17 @@
+[Unit]
+Description=Daily changeover proof refresh (keeps rollout auto-gate green)
+Documentation=https://github.com/j0yen/rollout
+
+[Timer]
+# Run once per day, offset by 3 h to avoid peak-use hours.
+OnCalendar=daily
+AccuracySec=1h
+# Run immediately at first activation if the last run was missed
+# (e.g. the machine was powered off at the scheduled time).
+Persistent=true
+# Skew by up to 20 min to avoid fleet-wide thundering herd.
+RandomizedDelaySec=1200
+Unit=changeover-prove.service
+
+[Install]
+WantedBy=timers.target

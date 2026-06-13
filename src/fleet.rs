@@ -134,6 +134,12 @@ impl FleetConfig {
         self.recipes.get(name)
     }
 
+    /// Return all daemon names in the fleet config (order unspecified).
+    #[must_use]
+    pub(crate) fn all_names(&self) -> Vec<String> {
+        self.recipes.keys().cloned().collect()
+    }
+
     /// Validate that all named daemons have recipes.
     ///
     /// Returns `Ok(())` if all names are covered, or

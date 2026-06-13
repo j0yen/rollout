@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.8.0 — 2026-06-13
+
+`rollout prove` — one-shot proof seeder: new subcommand runs `changeover probe <unit> --json`
+and feeds the output through the existing `record-proof` ingestion path into
+`~/.config/rollout/proofs.json`. `--daemon <unit>` proves a single daemon; `--all` proves
+every daemon in `fleet.toml`; `--dry-run` prints without writing. Exits non-zero on any Refuse
+verdict (events_lost > 0 or binary hash mismatch). Adds `FleetConfig::all_names()` to enumerate
+the fleet for `--all`. New `contrib/systemd/changeover-prove.{timer,service}` install under
+`~/.config/systemd/user/` for a daily automated re-proof; `systemctl --user --dry-run enable`
+safe (prove is read+measure-only). Fixture-based `cargo test` covers ACs 1–4 and 6.
+
 ## v0.7.0 — 2026-06-13
 
 Proof ledger and `rollout apply --auto`: new `autogate` module with `ProofLedger`, `ProofEntry`, `GateConfig`, and `gate()` (pure, no I/O). New `rollout record-proof --from <probe-json>` subcommand ingests `changeover probe` output into `~/.config/rollout/proofs.json`. `rollout apply --auto` consults the ledger per-daemon and skips any with a Refuse verdict (no matching binary hash or events lost > 0); requires `ROLLOUT_AUTO_ENABLED=1` interlock. `rollout apply --dry-run` prints the plan without restarting. Comprehensive unit tests cover all gate branches (AC3–AC5).

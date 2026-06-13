@@ -87,6 +87,16 @@ pub(crate) enum Command {
     /// The proof is then consulted by `rollout apply --auto` to decide whether
     /// a daemon's swap is safe to execute unattended.
     RecordProof(RecordProofArgs),
+
+    /// Run `changeover probe` for one or all daemons and seed the proof ledger.
+    ///
+    /// `rollout prove --daemon <unit>` invokes `changeover probe <unit> --json`,
+    /// feeds the output to the existing record-proof ingestion path, and writes
+    /// `~/.config/rollout/proofs.json`.  Exits non-zero if the proof verdict is
+    /// Refuse (binary hash mismatch or `events_lost` > 0).
+    ///
+    /// `--all` proves every daemon in fleet.toml; `--dry-run` prints without writing.
+    Prove(crate::prove::ProveArgs),
 }
 
 impl Default for Command {

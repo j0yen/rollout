@@ -31,7 +31,7 @@ use crate::scan::{collect_stale, parse_stale_json, BinstaleEntry, ScanSource};
 /// `plan` (the default) shows what would run without mutating anything.
 /// `apply` executes the plan. A daemon with no recipe in fleet.toml is refused.
 #[derive(Debug, Parser)]
-#[command(name = "rollout", version = "0.1.0", about = "Safe rolling restart for the live fleet")]
+#[command(name = "rollout", version, about = "Safe rolling restart for the live fleet")]
 pub(crate) struct Cli {
     /// Subcommand to run. Defaults to `plan` if omitted.
     #[command(subcommand)]

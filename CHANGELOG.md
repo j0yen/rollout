@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.5.0 — 2026-06-13
+
+turn-aware voice guard: subscribe to agorabus turn/session events, defer voice-daemon restarts mid-turn, extend VOICE_SET_PATTERN to include wm-audio
+
 ## v0.4.0 — 2026-06-13
 
 Teach `rollout apply` to honour the `unit` field in `DaemonRecipe`: when a recipe carries a systemd unit name, restart via `systemctl --user restart <unit>` instead of SIGTERM+launch_cmd — matching how the live fleet is actually managed. Extracts shared `restart_unit` helper (pub(crate) in install.rs) so both `install` and `apply` call one implementation. Adds `RestartStrategy` enum and `restart_path` field on `RestartResult` for auditability. Legacy SIGTERM+launch_cmd path unchanged for non-systemd recipes.

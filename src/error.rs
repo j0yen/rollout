@@ -38,6 +38,14 @@ pub(crate) enum RolloutError {
     #[error("window guard: daemon `{name}` has recent wm.dialog.turn.* activity; use --window to change the quiet period or wait")]
     WindowGuardBlocked { name: String },
 
+    /// One or more voice daemons were deferred because a turn or session was
+    /// in flight (or the bus was unreachable).  The daemons were NOT restarted.
+    #[error(
+        "voice-active deferral: {count} daemon(s) were not restarted ({names}); \
+         retry once the voice turn is complete"
+    )]
+    VoiceActivityDeferred { names: String, count: usize },
+
     /// I/O or subprocess error.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),

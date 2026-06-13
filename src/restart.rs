@@ -245,15 +245,32 @@ fn launch_daemon(recipe: &DaemonRecipe) -> Result<Option<u32>, RolloutError> {
     Ok(new_pid)
 }
 
-/// Poll for process exit by checking `/proc/<pid>` existence.
+/// Poll for process exit by checking `/proc/<pid>` state.
 ///
-/// Returns `true` if the process exited within `timeout`, `false` otherwise.
+/// Returns `true` if the process has exited (or is a zombie) within `timeout`,
+/// `false` otherwise.
+///
+/// A zombie process (`Z` state) is treated as exited: from the daemon-restart
+/// perspective, a zombie is no longer running and will be reaped by its parent.
+/// Checking only for `/proc/<pid>` existence misses zombies because their proc
+/// entry persists until the parent calls `wait()`.
 fn wait_for_exit(pid: u32, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
-    let proc_path = format!("/proc/{pid}");
+    let stat_path = format!("/proc/{pid}/stat");
     loop {
-        if !std::path::Path::new(&proc_path).exists() {
-            return true;
+        match std::fs::read_to_string(&stat_path) {
+            Err(_) => return true, // proc entry gone → process exited
+            Ok(stat) => {
+                // stat format: "<pid> (<comm>) <state> ...".
+                // comm may contain spaces/parens, so split after the last ')'.
+                let is_zombie = stat
+                    .rsplit_once(')')
+                    .map(|(_, rest)| rest.trim_start().starts_with('Z'))
+                    .unwrap_or(false);
+                if is_zombie {
+                    return true;
+                }
+            }
         }
         if Instant::now() >= deadline {
             return false;

@@ -12,7 +12,10 @@ use clap::{Args, Parser, Subcommand};
 use crate::error::RolloutError;
 use crate::fleet::{self, FleetConfig};
 use crate::fleetgen::{run_fleet_gen, FleetGenArgs};
-use crate::health::check_window_guard;
+use crate::health::{
+    check_window_guard, is_voice_daemon, voice_activity_in_flight, VoiceActivityState,
+    DEFAULT_VOICE_SAMPLE_SECS,
+};
 use crate::install::{run_install, InstallArgs, OutputFormat};
 use crate::restart::{restart_daemon, RestartResult, DEFAULT_HEALTHCHECK_TIMEOUT_SECS};
 use crate::scan::{collect_stale, parse_stale_json, BinstaleEntry, ScanSource};
@@ -247,8 +250,10 @@ pub(crate) fn run_apply(args: &ApplyArgs) -> Result<(), RolloutError> {
 
     let healthcheck_timeout = Duration::from_secs(args.healthcheck_timeout);
     let window_duration = args.window.unwrap_or_else(|| Duration::from_secs(5));
+    let voice_sample = Duration::from_secs(DEFAULT_VOICE_SAMPLE_SECS);
 
     let mut results: Vec<RestartResult> = Vec::new();
+    let mut deferred: Vec<String> = Vec::new();
 
     for (i, entry) in stale.iter().enumerate() {
         let recipe = fleet.get(&entry.comm).ok_or_else(|| RolloutError::UnknownDaemons {
@@ -263,7 +268,38 @@ pub(crate) fn run_apply(args: &ApplyArgs) -> Result<(), RolloutError> {
             entry.pid
         );
 
-        // Window guard for voice-set daemons.
+        // Turn/session liveness probe — always applied to voice-set daemons.
+        if is_voice_daemon(&entry.comm) {
+            match voice_activity_in_flight(voice_sample) {
+                VoiceActivityState::InFlight { reason } => {
+                    println!(
+                        "rollout apply [{}/{}]: {} deferred — voice active: {}",
+                        i + 1,
+                        stale.len(),
+                        entry.comm,
+                        reason,
+                    );
+                    deferred.push(entry.comm.clone());
+                    continue;
+                }
+                VoiceActivityState::BusUnreachable => {
+                    println!(
+                        "rollout apply [{}/{}]: {} deferred — agorabus unreachable \
+                         (cannot confirm turn is idle; will not restart blind)",
+                        i + 1,
+                        stale.len(),
+                        entry.comm,
+                    );
+                    deferred.push(entry.comm.clone());
+                    continue;
+                }
+                VoiceActivityState::Idle => {
+                    // Bus is quiet — proceed to restart.
+                }
+            }
+        }
+
+        // Coarse window guard (opt-in via --window; backward-compat).
         if args.window.is_some() {
             check_window_guard(&entry.comm, window_duration)?;
         }
@@ -297,12 +333,26 @@ pub(crate) fn run_apply(args: &ApplyArgs) -> Result<(), RolloutError> {
         }
     }
 
-    println!(
-        "rollout apply: done. {}/{} daemons restarted.",
-        results.len(),
-        stale.len()
-    );
-    Ok(())
+    if deferred.is_empty() {
+        println!(
+            "rollout apply: done. {}/{} daemons restarted.",
+            results.len(),
+            stale.len()
+        );
+        Ok(())
+    } else {
+        println!(
+            "rollout apply: {}/{} restarted; {} deferred (voice active): {}",
+            results.len(),
+            stale.len(),
+            deferred.len(),
+            deferred.join(", "),
+        );
+        Err(RolloutError::VoiceActivityDeferred {
+            names: deferred.join(", "),
+            count: deferred.len(),
+        })
+    }
 }
 
 /// Load fleet config from the given path or the default path.

@@ -57,4 +57,8 @@ pub(crate) enum RolloutError {
     /// Binstale JSON deserialization error.
     #[error("JSON parse error: {0}")]
     Json(#[from] serde_json::Error),
+
+    /// One or more daemons produced a Refuse verdict during `rollout prove`.
+    #[error("prove Refuse: {reason}")]
+    ProveRefused { reason: String },
 }

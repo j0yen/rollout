@@ -25,6 +25,7 @@ mod fleet;
 mod fleetgen;
 mod health;
 mod install;
+mod prove;
 mod restart;
 mod scan;
 mod warmswap;
@@ -39,6 +40,7 @@ fn main() -> ExitCode {
         Command::Install(args) => cli::run_install_cmd(&args),
         Command::FleetGen(args) => cli::run_fleet_gen_cmd(&args),
         Command::RecordProof(args) => cli::run_record_proof(&args),
+        Command::Prove(args) => prove::run_prove(&args),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

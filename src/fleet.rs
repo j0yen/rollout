@@ -48,6 +48,23 @@ pub(crate) struct DaemonRecipe {
     /// Grace period (seconds) before SIGKILL if process ignores SIGTERM.
     #[serde(default = "default_grace_period")]
     pub grace_period_secs: u64,
+    /// Opt-in to warm-swap restart strategy.
+    ///
+    /// When `true`, rollout uses the warm-swap sequence (start successor → wait
+    /// for claim acquisition → stop predecessor → verify exactly one holder)
+    /// instead of the hard kill-then-restart.  Overridden to `true` automatically
+    /// when `claim_key` is also set.  Default: `false` (hard restart, backward-
+    /// compatible).
+    #[serde(default)]
+    pub warm_swap: bool,
+    /// agorabus claim path used by this daemon (e.g. `agorabus://daemon/wm-stt`).
+    ///
+    /// When set, warm-swap is unconditionally enabled for this daemon.
+    /// When absent but `warm_swap = true`, the path is derived automatically as
+    /// `agorabus://daemon/<unit-stem>` (where `unit-stem` is the unit filename
+    /// with `.service` stripped).
+    #[serde(default)]
+    pub claim_key: Option<String>,
 }
 
 fn default_build_cmd() -> String {

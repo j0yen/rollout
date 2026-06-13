@@ -26,6 +26,7 @@ mod health;
 mod install;
 mod restart;
 mod scan;
+mod warmswap;
 
 use cli::{Cli, Command};
 

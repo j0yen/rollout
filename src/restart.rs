@@ -368,6 +368,8 @@ mod tests {
             unit: Some("wm-tts.service".to_owned()),
             healthcheck: None,
             grace_period_secs: 5,
+            warm_swap: false,
+            claim_key: None,
         };
 
         // Branch selector logic (mirrors restart_daemon)
@@ -405,6 +407,8 @@ mod tests {
             unit: None,
             healthcheck: None,
             grace_period_secs: 5,
+            warm_swap: false,
+            claim_key: None,
         };
 
         let unit_name = recipe.unit.as_deref().filter(|u| !u.is_empty());
@@ -423,6 +427,8 @@ mod tests {
             unit: Some(String::new()),
             healthcheck: None,
             grace_period_secs: 5,
+            warm_swap: false,
+            claim_key: None,
         };
 
         let unit_name = recipe.unit.as_deref().filter(|u| !u.is_empty());
@@ -482,6 +488,8 @@ mod tests {
             // Healthcheck that always fails:
             healthcheck: Some("false".to_owned()),
             grace_period_secs: 1,
+            warm_swap: false,
+            claim_key: None,
         };
 
         let result = restart_daemon(

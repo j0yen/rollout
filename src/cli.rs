@@ -11,6 +11,7 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::error::RolloutError;
 use crate::fleet::{self, FleetConfig};
+use crate::warmswap::restart_strategy_label;
 use crate::fleetgen::{run_fleet_gen, FleetGenArgs};
 use crate::health::{
     check_window_guard, is_voice_daemon, voice_activity_in_flight, VoiceActivityState,
@@ -219,11 +220,23 @@ pub(crate) fn run_plan(args: &PlanArgs) -> Result<(), RolloutError> {
         if let Some(repo) = &recipe.repo {
             println!("  repo:    {}", repo.display());
         }
+        println!("  strategy: {}", restart_strategy_label(recipe));
         println!("  build:   {}", recipe.build_cmd);
         println!("  install: {}", recipe.install_cmd);
         println!("  launch:  {}", recipe.launch_cmd);
         println!("  health:  {}", recipe.healthcheck_cmd());
         println!("  grace:   {}s", recipe.grace_period_secs);
+        if restart_strategy_label(recipe) == "warm-swap" {
+            use crate::warmswap::claim_path_for_recipe;
+            if let Some(claim_path) = claim_path_for_recipe(recipe) {
+                println!("  warm-swap sequence:");
+                println!("    1. install binary → dest");
+                println!("    2. launch successor (systemd-run --user --scope)");
+                println!("    3. wait for ClaimAcquire on '{claim_path}'");
+                println!("    4. stop predecessor (systemctl --user stop)");
+                println!("    5. verify exactly 1 holder on '{claim_path}'");
+            }
+        }
         println!();
     }
     Ok(())

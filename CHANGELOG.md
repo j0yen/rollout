@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.6.0 — 2026-06-13
+
+warm-swap restart strategy: start successor first on agorabus ClaimAcquire, stop predecessor after successor holds the lease, then verify exactly one holder — zero-loss subscribe window for the live fleet. plan output gains a strategy column (warm-swap|hard).
+
 ## v0.5.0 — 2026-06-13
 
 turn-aware voice guard: subscribe to agorabus turn/session events, defer voice-daemon restarts mid-turn, extend VOICE_SET_PATTERN to include wm-audio

@@ -269,7 +269,7 @@ fn atomic_install(src: &Path, dest: &Path) -> Result<(), RolloutError> {
 /// `ExecStart` argv[0] resolves to `dest`.
 ///
 /// Returns the unit filename (e.g. `"recalld.service"`) or `None` if no match.
-fn find_unit_for_dest(dest: &Path) -> Result<Option<String>, RolloutError> {
+pub(crate) fn find_unit_for_dest(dest: &Path) -> Result<Option<String>, RolloutError> {
     let units_dir = systemd_user_dir()?;
     if !units_dir.exists() {
         return Ok(None);
@@ -511,7 +511,7 @@ fn expand_tilde(p: &Path) -> Result<PathBuf, RolloutError> {
 }
 
 /// Return `$HOME` as a `PathBuf`.
-fn home_dir() -> Result<PathBuf, RolloutError> {
+pub(crate) fn home_dir() -> Result<PathBuf, RolloutError> {
     std::env::var("HOME")
         .map(PathBuf::from)
         .map_err(|_| RolloutError::FleetConfig("$HOME not set".to_owned()))

@@ -272,13 +272,14 @@ pub(crate) fn run_apply(args: &ApplyArgs) -> Result<(), RolloutError> {
             Ok(result) => {
                 let elapsed_ms = result.end_ms.saturating_sub(result.start_ms);
                 println!(
-                    "rollout apply [{}/{}]: {} ok (old_pid={}, new_pid={:?}, elapsed={}ms{})",
+                    "rollout apply [{}/{}]: {} ok (old_pid={}, new_pid={:?}, elapsed={}ms, restart_path={}{})",
                     i + 1,
                     stale.len(),
                     entry.comm,
                     result.old_pid,
                     result.new_pid,
                     elapsed_ms,
+                    result.restart_path,
                     if result.sigkill_used { ", SIGKILL used" } else { "" }
                 );
                 results.push(result);

@@ -38,9 +38,9 @@ pub(crate) struct DaemonRecipe {
     /// Command to launch the daemon (run in the repo dir if repo is set).
     pub launch_cmd: String,
     /// Optional systemd-user unit name that owns this daemon (e.g. `wm-audio.service`).
-    /// Populated by `rollout fleet-gen`; consumed by `rollout apply --systemd`.
+    /// Populated by `rollout fleet-gen`; consumed by `restart_daemon` to choose
+    /// the `systemctl --user restart` path over the legacy SIGTERM+launch_cmd path.
     #[serde(default)]
-    #[allow(dead_code)] // consumed by the rollout-apply-systemd PRD
     pub unit: Option<String>,
     /// Shell command to check if daemon re-registered successfully.
     /// Default: `agorabus peers | jq -e '.[] | .name' | grep -q <name>`

@@ -364,7 +364,7 @@ fn canonical_or_self(p: &Path) -> PathBuf {
 /// `agorabus.service` and `systemctl --user restart` for everything else.
 ///
 /// Returns `(path_chosen, restarted)`.
-fn restart_unit(unit_name: &str) -> Result<(RestartPath, bool), RolloutError> {
+pub(crate) fn restart_unit(unit_name: &str) -> Result<(RestartPath, bool), RolloutError> {
     if unit_name == "agorabus.service" && agorabus_reload_available() {
         let ok = run_agorabus_reload()?;
         return Ok((RestartPath::AgorabuReload, ok));

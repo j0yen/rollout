@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.9.0 — 2026-06-13
+
+Adds `rollout prove --daemon <unit>` / `--all` / `--dry-run` subcommand that
+invokes `changeover probe` and seeds ~/.config/rollout/proofs.json — closing
+the gap where `apply --auto` refused everything because the ledger never existed.
+Includes a daily systemd-user timer (changeover-prove.{timer,service}) and
+5 fixture-based cargo tests. Version bumped to 0.8.0.
+
 ## v0.8.0 — 2026-06-13
 
 `rollout prove` — one-shot proof seeder: new subcommand runs `changeover probe <unit> --json`

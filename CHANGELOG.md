@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.3.0 — 2026-06-13
+
+Add rollout fleet-gen subcommand to derive fleet.toml.proposed from live binstale+systemd state; adds unit field to DaemonRecipe.
+
 ## Unreleased
 
 Add integration tests proving acceptance criteria 2, 3, 5, 6, and 7

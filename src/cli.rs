@@ -11,6 +11,7 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::error::RolloutError;
 use crate::fleet::{self, FleetConfig};
+use crate::fleetgen::{run_fleet_gen, FleetGenArgs};
 use crate::health::check_window_guard;
 use crate::install::{run_install, InstallArgs, OutputFormat};
 use crate::restart::{restart_daemon, RestartResult, DEFAULT_HEALTHCHECK_TIMEOUT_SECS};
@@ -54,6 +55,17 @@ pub(crate) enum Command {
     /// via `agorabus reload --build` (for agorabus) or `systemctl --user restart`
     /// (for all other daemons). Emits a structured verdict.
     Install(InstallCliArgs),
+
+    /// Derive a candidate fleet.toml from the live daemon set.
+    ///
+    /// Reads `binstale scan --format json`, cross-references each daemon's
+    /// install path against `~/.config/systemd/user/*.service`, and writes a
+    /// `[[daemon]]` recipe for each matched daemon to `--out` (default:
+    /// `~/.config/rollout/fleet.toml.proposed`).
+    ///
+    /// Never writes to `fleet.toml` directly. Review the proposed file and
+    /// accept it with `mv fleet.toml.proposed fleet.toml`.
+    FleetGen(FleetGenCliArgs),
 }
 
 impl Default for Command {
@@ -107,6 +119,21 @@ pub(crate) struct ApplyArgs {
     /// Healthcheck timeout per daemon. Default: 30 seconds.
     #[arg(long, value_name = "SECS", default_value_t = DEFAULT_HEALTHCHECK_TIMEOUT_SECS)]
     pub healthcheck_timeout: u64,
+}
+
+/// Arguments for `rollout fleet-gen`.
+#[derive(Debug, Default, Args)]
+pub(crate) struct FleetGenCliArgs {
+    /// Write the proposed config to this path instead of the default
+    /// `~/.config/rollout/fleet.toml.proposed`.
+    #[arg(long, value_name = "PATH")]
+    pub out: Option<PathBuf>,
+
+    /// Only generate recipes for daemons whose name matches this regex.
+    ///
+    /// Example: `--match 'wm-.*'` generates recipes only for wm-* daemons.
+    #[arg(long, value_name = "REGEX")]
+    pub match_regex: Option<String>,
 }
 
 /// Arguments for `rollout install`.
@@ -309,6 +336,20 @@ fn filter_only(entries: Vec<BinstaleEntry>, only: Option<&str>) -> Vec<BinstaleE
         Some(name) => entries.into_iter().filter(|e| e.comm == name).collect(),
         None => entries,
     }
+}
+
+/// Run the `fleet-gen` subcommand: derive a candidate fleet.toml from live state.
+///
+/// # Errors
+///
+/// Returns an error if binstale cannot be invoked, the output path cannot
+/// be written, or the `--match` regex is invalid.
+pub(crate) fn run_fleet_gen_cmd(args: &FleetGenCliArgs) -> Result<(), RolloutError> {
+    let gen_args = FleetGenArgs {
+        out: args.out.clone(),
+        match_regex: args.match_regex.clone(),
+    };
+    run_fleet_gen(&gen_args)
 }
 
 /// Run the `install` subcommand: copy binary and restart the owning daemon.

@@ -21,6 +21,7 @@ use clap::Parser;
 mod cli;
 mod error;
 mod fleet;
+mod fleetgen;
 mod health;
 mod install;
 mod restart;
@@ -34,6 +35,7 @@ fn main() -> ExitCode {
         Command::Plan(args) => cli::run_plan(&args),
         Command::Apply(args) => cli::run_apply(&args),
         Command::Install(args) => cli::run_install_cmd(&args),
+        Command::FleetGen(args) => cli::run_fleet_gen_cmd(&args),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.0 — 2026-06-13
+
+Proof ledger and `rollout apply --auto`: new `autogate` module with `ProofLedger`, `ProofEntry`, `GateConfig`, and `gate()` (pure, no I/O). New `rollout record-proof --from <probe-json>` subcommand ingests `changeover probe` output into `~/.config/rollout/proofs.json`. `rollout apply --auto` consults the ledger per-daemon and skips any with a Refuse verdict (no matching binary hash or events lost > 0); requires `ROLLOUT_AUTO_ENABLED=1` interlock. `rollout apply --dry-run` prints the plan without restarting. Comprehensive unit tests cover all gate branches (AC3–AC5).
+
 ## v0.6.0 — 2026-06-13
 
 warm-swap restart strategy: start successor first on agorabus ClaimAcquire, stop predecessor after successor holds the lease, then verify exactly one holder — zero-loss subscribe window for the live fleet. plan output gains a strategy column (warm-swap|hard).

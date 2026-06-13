@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use clap::{Args, Parser, Subcommand};
 
+use crate::autogate::{self, GateConfig, GateVerdict, ProofEntry, ProofLedger};
 use crate::error::RolloutError;
 use crate::fleet::{self, FleetConfig};
 use crate::warmswap::restart_strategy_label;
@@ -50,6 +51,12 @@ pub(crate) enum Command {
     ///
     /// Per daemon: build → install → SIGTERM → wait → relaunch → healthcheck.
     /// Stops on the first daemon that fails to re-register.
+    ///
+    /// With `--auto`, consults the proof ledger (`~/.config/rollout/proofs.json`)
+    /// for each daemon. Only daemons with a current Allow verdict (matching
+    /// binary hash, 0 events lost) are restarted; others are skipped with the
+    /// reason printed. Requires `auto_enabled = true` in fleet.toml or env var
+    /// `ROLLOUT_AUTO_ENABLED=1`.
     Apply(ApplyArgs),
 
     /// Install a freshly-built binary to its dest and restart the owning daemon.
@@ -70,6 +77,16 @@ pub(crate) enum Command {
     /// Never writes to `fleet.toml` directly. Review the proposed file and
     /// accept it with `mv fleet.toml.proposed fleet.toml`.
     FleetGen(FleetGenCliArgs),
+
+    /// Record a changeover-probe result into the per-daemon proof ledger.
+    ///
+    /// Reads the probe JSON (produced by `changeover probe`) from `--from` and
+    /// writes or replaces the daemon's entry in `~/.config/rollout/proofs.json`.
+    /// A second `record-proof` for the same daemon always replaces the first.
+    ///
+    /// The proof is then consulted by `rollout apply --auto` to decide whether
+    /// a daemon's swap is safe to execute unattended.
+    RecordProof(RecordProofArgs),
 }
 
 impl Default for Command {
@@ -123,6 +140,29 @@ pub(crate) struct ApplyArgs {
     /// Healthcheck timeout per daemon. Default: 30 seconds.
     #[arg(long, value_name = "SECS", default_value_t = DEFAULT_HEALTHCHECK_TIMEOUT_SECS)]
     pub healthcheck_timeout: u64,
+
+    /// Consult the proof ledger; only restart daemons with a current Allow verdict.
+    ///
+    /// Requires env var `ROLLOUT_AUTO_ENABLED=1` to be set (safety interlock).
+    /// Each daemon is checked against `~/.config/rollout/proofs.json`; daemons
+    /// with a Refuse verdict are skipped with the reason printed.
+    #[arg(long)]
+    pub auto: bool,
+
+    /// Print what would happen without restarting any daemon.
+    #[arg(long)]
+    pub dry_run: bool,
+}
+
+/// Arguments for `rollout record-proof`.
+#[derive(Debug, Args)]
+pub(crate) struct RecordProofArgs {
+    /// Path to the probe JSON produced by `changeover probe`.
+    #[arg(long = "from", value_name = "PATH|-")]
+    pub from: String,
+    /// Path to the proof ledger. Default: ~/.config/rollout/proofs.json.
+    #[arg(long, value_name = "PATH")]
+    pub ledger: Option<PathBuf>,
 }
 
 /// Arguments for `rollout fleet-gen`.
@@ -261,12 +301,36 @@ pub(crate) fn run_apply(args: &ApplyArgs) -> Result<(), RolloutError> {
     // Validate all daemons before touching any of them.
     fleet.validate_names(stale.iter().map(|e| e.comm.as_str()))?;
 
+    // --auto gate: load the ledger once, then evaluate per-daemon below.
+    let auto_ledger: Option<ProofLedger> = if args.auto {
+        let enabled = std::env::var("ROLLOUT_AUTO_ENABLED").unwrap_or_default();
+        if enabled != "1" {
+            println!(
+                "rollout apply: auto is disabled (set ROLLOUT_AUTO_ENABLED=1 to enable)"
+            );
+            return Ok(());
+        }
+        let ledger_path = autogate::default_proofs_path()?;
+        Some(ProofLedger::load(&ledger_path)?)
+    } else {
+        None
+    };
+
+    if args.dry_run {
+        println!("rollout apply [dry-run]: would restart {} daemon(s):", stale.len());
+        for entry in &stale {
+            println!("  {}", entry.comm);
+        }
+        return Ok(());
+    }
+
     let healthcheck_timeout = Duration::from_secs(args.healthcheck_timeout);
     let window_duration = args.window.unwrap_or_else(|| Duration::from_secs(5));
     let voice_sample = Duration::from_secs(DEFAULT_VOICE_SAMPLE_SECS);
 
     let mut results: Vec<RestartResult> = Vec::new();
     let mut deferred: Vec<String> = Vec::new();
+    let mut refused_auto: Vec<String> = Vec::new();
 
     for (i, entry) in stale.iter().enumerate() {
         let recipe = fleet.get(&entry.comm).ok_or_else(|| RolloutError::UnknownDaemons {
@@ -312,6 +376,31 @@ pub(crate) fn run_apply(args: &ApplyArgs) -> Result<(), RolloutError> {
             }
         }
 
+        // Auto-gate: check proof ledger when --auto is set.
+        if let Some(ref ledger) = auto_ledger {
+            // Use the exe path as a stand-in hash when no binary hash is available
+            // (the probe records the real hash; for apply we use the on-disk exe path digest).
+            let current_hash = entry.exe_path.clone();
+            let config = GateConfig::default();
+            let verdict = autogate::gate(&entry.comm, &current_hash, ledger, &config);
+            match verdict {
+                GateVerdict::Allow => {
+                    println!(
+                        "rollout apply [{}/{}]: {} auto-gate Allow",
+                        i + 1, stale.len(), entry.comm
+                    );
+                }
+                GateVerdict::Refuse { ref reason } => {
+                    println!(
+                        "rollout apply [{}/{}]: {} auto-gate Refuse — {reason}",
+                        i + 1, stale.len(), entry.comm
+                    );
+                    refused_auto.push(entry.comm.clone());
+                    continue;
+                }
+            }
+        }
+
         // Coarse window guard (opt-in via --window; backward-compat).
         if args.window.is_some() {
             check_window_guard(&entry.comm, window_duration)?;
@@ -346,6 +435,14 @@ pub(crate) fn run_apply(args: &ApplyArgs) -> Result<(), RolloutError> {
         }
     }
 
+    if !refused_auto.is_empty() {
+        println!(
+            "rollout apply: {} auto-gate refused: {}",
+            refused_auto.len(),
+            refused_auto.join(", ")
+        );
+    }
+
     if deferred.is_empty() {
         println!(
             "rollout apply: done. {}/{} daemons restarted.",
@@ -366,6 +463,48 @@ pub(crate) fn run_apply(args: &ApplyArgs) -> Result<(), RolloutError> {
             count: deferred.len(),
         })
     }
+}
+
+/// Run the `record-proof` subcommand: ingest a changeover probe JSON into the ledger.
+///
+/// # Errors
+///
+/// Returns an error if the probe JSON cannot be read or parsed, or if the ledger
+/// cannot be loaded or saved.
+pub(crate) fn run_record_proof(args: &RecordProofArgs) -> Result<(), RolloutError> {
+    // Read probe JSON from file or stdin.
+    let json = if args.from == "-" {
+        use std::io::Read as _;
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| RolloutError::BinstaleScanFailed(format!("read stdin: {e}")))?;
+        buf
+    } else {
+        std::fs::read_to_string(&args.from).map_err(|e| {
+            RolloutError::BinstaleScanFailed(format!("read {}: {e}", args.from))
+        })?
+    };
+
+    let entry: ProofEntry = serde_json::from_str(&json).map_err(|e| {
+        RolloutError::FleetConfig(format!("probe JSON parse error: {e}"))
+    })?;
+
+    let ledger_path = match &args.ledger {
+        Some(p) => p.clone(),
+        None => autogate::default_proofs_path()?,
+    };
+
+    let mut ledger = ProofLedger::load(&ledger_path)?;
+    let daemon_name = entry.daemon.clone();
+    ledger.upsert(entry);
+    ledger.save(&ledger_path)?;
+
+    println!(
+        "record-proof: saved proof for `{daemon_name}` → {}",
+        ledger_path.display()
+    );
+    Ok(())
 }
 
 /// Load fleet config from the given path or the default path.

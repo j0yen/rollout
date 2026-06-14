@@ -61,4 +61,8 @@ pub(crate) enum RolloutError {
     /// One or more daemons produced a Refuse verdict during `rollout prove`.
     #[error("prove Refuse: {reason}")]
     ProveRefused { reason: String },
+
+    /// One or more daemons failed post-swap verification in `rollout cycle`.
+    #[error("cycle: {count} daemon(s) failed post-swap verification")]
+    CycleVerifyFailed { count: usize },
 }

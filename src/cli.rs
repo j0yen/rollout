@@ -97,6 +97,25 @@ pub(crate) enum Command {
     ///
     /// `--all` proves every daemon in fleet.toml; `--dry-run` prints without writing.
     Prove(crate::prove::ProveArgs),
+
+    /// Automated prove → apply (warm-swap only) → verify cycle for the voice fleet.
+    ///
+    /// Runs in strict order:
+    ///   1. `rollout prove --all` — refresh the proof ledger via `changeover probe`.
+    ///   2. `rollout apply --auto` — warm-swap only; daemons with no warm-swap path
+    ///      are **skipped** (never hard-restarted). Turn-aware quiet window applied.
+    ///   3. Post-swap verification — confirm each rolled daemon re-holds its
+    ///      `agorabus://daemon/<unit>` claim and a bus round-trip completes.
+    ///   4. Receipt written to `~/.local/state/rollout/receipts/`.
+    ///
+    /// **Gated by `ROLLOUT_AUTO_ENABLED`**: when unset or `"0"`, the cycle runs in
+    /// dry-run mode (probe + plan + would-verify; zero restarts). This is the
+    /// **default** posture — the systemd timer ships disabled. To enable live swaps:
+    ///
+    /// ```
+    /// ROLLOUT_AUTO_ENABLED=1 systemctl --user enable --now changeover-activate.timer
+    /// ```
+    Cycle(crate::cycle::CycleArgs),
 }
 
 impl Default for Command {

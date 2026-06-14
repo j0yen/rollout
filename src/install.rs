@@ -194,7 +194,7 @@ fn do_install(args: &InstallArgs) -> Result<InstallVerdict, RolloutError> {
         check_window_guard(&daemon_name, args.restart_window)?;
     }
 
-    let (restart_path, restarted) = restart_unit(unit_name)?;
+    let (restart_path, restarted, _new_pid) = restart_unit(unit_name)?;
 
     let verify = if restarted {
         verify_unit(unit_name, &dest, restart_path)
@@ -363,15 +363,21 @@ fn canonical_or_self(p: &Path) -> PathBuf {
 /// Attempt to restart the given systemd unit, choosing agorabus-reload for
 /// `agorabus.service` and `systemctl --user restart` for everything else.
 ///
-/// Returns `(path_chosen, restarted)`.
-pub(crate) fn restart_unit(unit_name: &str) -> Result<(RestartPath, bool), RolloutError> {
+/// Returns `(path_chosen, restarted, new_pid)`.  `new_pid` is `Some` only on
+/// the agorabus-reload path where the reload verdict includes the new daemon PID.
+pub(crate) fn restart_unit(unit_name: &str) -> Result<(RestartPath, bool, Option<u32>), RolloutError> {
     if unit_name == "agorabus.service" && agorabus_reload_available() {
-        let ok = run_agorabus_reload()?;
-        return Ok((RestartPath::AgorabuReload, ok));
+        let (ok, new_pid) = run_agorabus_reload()?;
+        if ok {
+            return Ok((RestartPath::AgorabuReload, true, new_pid));
+        }
+        // Reload failed or returned ok=false (e.g. --no-dry-run not supported in
+        // the installed version); fall through to systemctl restart.
+        eprintln!("rollout: agorabus reload failed or unavailable — falling back to systemctl restart");
     }
 
     let ok = systemctl_restart(unit_name)?;
-    Ok((RestartPath::Systemctl, ok))
+    Ok((RestartPath::Systemctl, ok, None))
 }
 
 /// Check whether `agorabus reload --help` exits 0 (i.e. the subcommand exists).
@@ -385,18 +391,45 @@ fn agorabus_reload_available() -> bool {
         .unwrap_or(false)
 }
 
-/// Run `agorabus reload --build --format json`.
-fn run_agorabus_reload() -> Result<bool, RolloutError> {
-    let status = Command::new("agorabus")
-        .args(["reload", "--build", "--format", "json"])
-        .status()
-        .map_err(|e| {
-            RolloutError::BuildFailed {
-                name: "agorabus".to_owned(),
-                reason: format!("agorabus reload spawn: {e}"),
-            }
+/// Run `agorabus reload --format json` and return `(success, new_pid)`.
+///
+/// If the reload subcommand supports live triggering (success exit + non-null new_pid),
+/// returns `(true, Some(new_pid))`. When the installed version is dry-run-only
+/// (status=failed or new_pid=null), returns `(false, None)` so the caller can
+/// fall back to `systemctl restart`.
+///
+/// The reload verdict JSON includes a `new_pid` field when the daemon was bounced.
+fn run_agorabus_reload() -> Result<(bool, Option<u32>), RolloutError> {
+    let out = Command::new("agorabus")
+        .args(["reload", "--format", "json"])
+        .output()
+        .map_err(|e| RolloutError::BuildFailed {
+            name: "agorabus".to_owned(),
+            reason: format!("agorabus reload spawn: {e}"),
         })?;
-    Ok(status.success())
+
+    // Print stdout/stderr so the operator can see the reload verdict.
+    if !out.stdout.is_empty() {
+        let _ = std::io::Write::write_all(&mut std::io::stderr(), &out.stdout);
+    }
+    if !out.stderr.is_empty() {
+        let _ = std::io::Write::write_all(&mut std::io::stderr(), &out.stderr);
+    }
+
+    // Parse the JSON verdict. A genuine live reload has status="ok" and new_pid != null.
+    // A dry-run result has status="failed" and new_pid=null — treat as not-ok so the
+    // caller falls back to systemctl restart.
+    let verdict = serde_json::from_slice::<serde_json::Value>(&out.stdout).ok();
+    let status_ok = verdict
+        .as_ref()
+        .and_then(|v| v.get("status").and_then(|s| s.as_str()))
+        .map(|s| s == "ok")
+        .unwrap_or(out.status.success());
+    let new_pid = verdict
+        .and_then(|v| v.get("new_pid").and_then(|p| p.as_u64()))
+        .map(|p| p as u32);
+
+    Ok((status_ok && new_pid.is_some(), new_pid))
 }
 
 /// Run `systemctl --user restart <unit>`.

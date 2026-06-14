@@ -111,7 +111,7 @@ pub(crate) fn restart_daemon(
     let (new_pid, sigkill_used, restart_path) = if let Some(unit) = unit_name {
         // ── Systemd branch ────────────────────────────────────────────────────
         // Step 3: restart via systemctl/agorabus (no SIGTERM, no launch_cmd)
-        let (install_rp, _restarted) = restart_unit(unit)?;
+        let (install_rp, _restarted, reload_new_pid) = restart_unit(unit)?;
         eprintln!(
             "rollout: restarted {name} via {unit} (path={rp:?})",
             name = recipe.name,
@@ -138,7 +138,9 @@ pub(crate) fn restart_daemon(
 
         // Step 5: stamp — clear prov-stale on the new binary so the next
         // binstale scan shows fresh rather than prov-stale.
-        if let Some(new_pid) = crate::install::unit_main_pid(unit) {
+        // Prefer new_pid from the reload verdict; fall back to unit_main_pid.
+        let stamp_pid = reload_new_pid.or_else(|| crate::install::unit_main_pid(unit));
+        if let Some(new_pid) = stamp_pid {
             try_stamp_new_binary(new_pid);
         }
 
@@ -393,7 +395,7 @@ mod tests {
         // `restart_unit` is imported from `crate::install` at the top of this
         // file.  This test just ensures the symbol is reachable and the import
         // compiles without any local shadowing.
-        let _fn_ptr: fn(&str) -> Result<(crate::install::RestartPath, bool), crate::error::RolloutError> =
+        let _fn_ptr: fn(&str) -> Result<(crate::install::RestartPath, bool, Option<u32>), crate::error::RolloutError> =
             restart_unit;
         // `find_unit_for_dest` is also pub(crate) in install — verify it's
         // accessible from here.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.11.0 — 2026-06-14
+
+changeover-activate: rollout cycle subcommand (prove→apply-warmswap→verify) + dormant systemd timer; ROLLOUT_AUTO_ENABLED=0 default, dry-run only until user enables
+
 ## v0.10.0 — 2026-06-13
 
 `rollout cycle` — automated prove → apply (warm-swap only) → verify loop with dormant

@@ -136,6 +136,12 @@ pub(crate) fn restart_daemon(
             Duration::from_millis(DEFAULT_POLL_INTERVAL_MS),
         )?;
 
+        // Step 5: stamp — clear prov-stale on the new binary so the next
+        // binstale scan shows fresh rather than prov-stale.
+        if let Some(new_pid) = crate::install::unit_main_pid(unit) {
+            try_stamp_new_binary(new_pid);
+        }
+
         (None, false, strategy)
     } else {
         // ── Legacy branch ─────────────────────────────────────────────────────
@@ -176,6 +182,11 @@ pub(crate) fn restart_daemon(
             healthcheck_timeout,
             Duration::from_millis(DEFAULT_POLL_INTERVAL_MS),
         )?;
+
+        // Step 8: stamp — clear prov-stale on the new binary.
+        if let Some(pid) = new_pid {
+            try_stamp_new_binary(pid);
+        }
 
         (new_pid, sigkill_used, RestartStrategy::SigtermLaunch)
     };
@@ -276,6 +287,48 @@ fn wait_for_exit(pid: u32, timeout: Duration) -> bool {
             return false;
         }
         std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// After a successful restart, back-date `user.prov.ts` on the new binary so the
+/// running process sees itself as fresh on the next `binstale scan`.
+///
+/// Non-fatal: if `binstale` is not installed or the stamp fails, a warning is
+/// printed but the rollout succeeds.
+fn try_stamp_new_binary(new_pid: u32) {
+    let proc_exe = format!("/proc/{new_pid}/exe");
+    let exe = match std::fs::read_link(&proc_exe) {
+        Ok(p) => {
+            let s = p.to_string_lossy().into_owned();
+            if s.ends_with(" (deleted)") {
+                eprintln!("rollout: stamp skipped — exe already deleted for pid={new_pid}");
+                return;
+            }
+            s
+        }
+        Err(e) => {
+            eprintln!("rollout: stamp skipped — could not read {proc_exe}: {e}");
+            return;
+        }
+    };
+
+    let status = std::process::Command::new("binstale")
+        .args(["stamp", &exe, "--pid", &new_pid.to_string()])
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            eprintln!("rollout: stamped {exe} (pid={new_pid}) — prov-stale cleared");
+        }
+        Ok(s) => {
+            eprintln!(
+                "rollout: binstale stamp exited {} — prov-stale may persist",
+                s.code().unwrap_or(-1)
+            );
+        }
+        Err(e) => {
+            eprintln!("rollout: binstale stamp not available ({e}) — prov-stale may persist");
+        }
     }
 }
 

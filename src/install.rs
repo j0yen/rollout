@@ -453,7 +453,7 @@ fn unit_is_active(unit_name: &str) -> bool {
 }
 
 /// Read `MainPID` from `systemctl --user show <unit>`.
-fn unit_main_pid(unit_name: &str) -> Option<u32> {
+pub(crate) fn unit_main_pid(unit_name: &str) -> Option<u32> {
     let out = Command::new("systemctl")
         .args(["--user", "show", "--property=MainPID", "--value", unit_name])
         .output()

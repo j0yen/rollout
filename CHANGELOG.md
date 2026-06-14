@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.10.0 — 2026-06-13
+
+`rollout cycle` — automated prove → apply (warm-swap only) → verify loop with dormant
+systemd timer. The `cycle` subcommand runs `rollout prove --all` to refresh the proof
+ledger, then `rollout apply --auto` restricted to warm-swap daemons only (no
+hard-restart fallback; a daemon with no warm-swap path is **skipped**, not restarted),
+then post-swap verification asserting each rolled daemon re-holds its agorabus claim.
+A JSON receipt is written to `~/.local/state/rollout/receipts/` after every run.
+
+**Ships DORMANT**: `ROLLOUT_AUTO_ENABLED=0` by default; `changeover-activate.timer`
+ships but is NOT enabled. To activate:
+```
+ROLLOUT_AUTO_ENABLED=1 systemctl --user enable --now changeover-activate.timer
+```
+Requires `PRD-rollout-selfreview-apply.md` (user-gated, blocked) for the policy unlock.
+This PRD ships the capability dormant and does not take that step.
+
 ## v0.9.0 — 2026-06-13
 
 Adds `rollout prove --daemon <unit>` / `--all` / `--dry-run` subcommand that

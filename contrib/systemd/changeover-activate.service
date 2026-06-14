@@ -1,0 +1,8 @@
+[Unit]
+Description=Rollout cycle — probe/prove/apply/verify voice fleet
+After=agorabus.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/rollout cycle
+Environment=ROLLOUT_AUTO_ENABLED=0

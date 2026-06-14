@@ -20,6 +20,7 @@ use clap::Parser;
 
 mod autogate;
 mod cli;
+mod cycle;
 mod error;
 mod fleet;
 mod fleetgen;
@@ -41,6 +42,7 @@ fn main() -> ExitCode {
         Command::FleetGen(args) => cli::run_fleet_gen_cmd(&args),
         Command::RecordProof(args) => cli::run_record_proof(&args),
         Command::Prove(args) => prove::run_prove(&args),
+        Command::Cycle(args) => cycle::run_cycle(&args),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

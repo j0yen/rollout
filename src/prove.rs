@@ -226,7 +226,6 @@ fn load_fleet(path: Option<&std::path::Path>) -> Result<FleetConfig, RolloutErro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
 
     /// Build a minimal fixture `ProofEntry` JSON.
     fn fixture_probe_json(
@@ -243,10 +242,18 @@ mod tests {
     /// Create a fake `changeover` shell script that always echoes `output` and
     /// return its (owning TempDir, absolute path).
     fn fake_changeover_script(output: &str) -> (tempfile::TempDir, String) {
+        use std::io::Write as _;
         let dir = tempfile::tempdir().expect("tempdir");
         let bin_path = dir.path().join("changeover");
         let content = format!("#!/bin/sh\necho '{}'\n", output.replace('\'', "'\\''"));
-        std::fs::write(&bin_path, content).expect("write fake changeover");
+        // Write via an explicit File handle so we can sync_all() before closing,
+        // ensuring the kernel sees no open writable fd when we later exec the
+        // script (avoids ETXTBSY / "Text file busy" on Linux).
+        {
+            let mut f = std::fs::File::create(&bin_path).expect("create fake changeover");
+            f.write_all(content.as_bytes()).expect("write fake changeover");
+            f.sync_all().expect("sync fake changeover");
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;

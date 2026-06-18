@@ -181,6 +181,14 @@ pub(crate) struct ApplyArgs {
     /// Print what would happen without restarting any daemon.
     #[arg(long)]
     pub dry_run: bool,
+
+    /// Use local `cargo build --release` instead of the cloudbuild route.
+    ///
+    /// **Escape hatch only.** Violates the standing fleet build policy that all
+    /// cargo must route through cloudbuild (Hetzner). A loud warning is emitted
+    /// to stderr when this flag is active. Never used by unattended/cron paths.
+    #[arg(long)]
+    pub local_build: bool,
 }
 
 /// Arguments for `rollout record-proof`.
@@ -232,6 +240,12 @@ pub(crate) struct InstallCliArgs {
     /// Output format: json (default) or table.
     #[arg(long, value_name = "FORMAT", default_value = "json")]
     pub format: String,
+
+    /// Use local `cargo build --release` instead of cloudbuild.
+    ///
+    /// **Escape hatch only.** Emits a loud stderr warning. See `apply --local-build`.
+    #[arg(long)]
+    pub local_build: bool,
 }
 
 /// Parse a human-readable duration like "30s", "2m", "1h".
@@ -348,7 +362,15 @@ pub(crate) fn run_apply(args: &ApplyArgs) -> Result<(), RolloutError> {
     if args.dry_run {
         println!("rollout apply [dry-run]: would restart {} daemon(s):", stale.len());
         for entry in &stale {
-            println!("  {}", entry.comm);
+            let recipe = fleet.get(&entry.comm).ok_or_else(|| RolloutError::UnknownDaemons {
+                names: vec![entry.comm.clone()],
+            })?;
+            let effective_build_cmd = if args.local_build {
+                "cargo build --release (LOCAL ESCAPE HATCH)".to_owned()
+            } else {
+                recipe.build_cmd.clone()
+            };
+            println!("  {} → build: {}", entry.comm, effective_build_cmd);
         }
         return Ok(());
     }
@@ -435,7 +457,7 @@ pub(crate) fn run_apply(args: &ApplyArgs) -> Result<(), RolloutError> {
             check_window_guard(&entry.comm, window_duration)?;
         }
 
-        match restart_daemon(recipe, entry.pid, healthcheck_timeout) {
+        match restart_daemon(recipe, entry.pid, healthcheck_timeout, args.local_build) {
             Ok(result) => {
                 let elapsed_ms = result.end_ms.saturating_sub(result.start_ms);
                 println!(

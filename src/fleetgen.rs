@@ -113,7 +113,23 @@ pub(crate) fn run_fleet_gen(args: &FleetGenArgs) -> Result<(), RolloutError> {
                 if let Some(rl) = repo_line {
                     write!(toml_buf, "{rl}").ok();
                 }
-                writeln!(toml_buf, "build_cmd = \"cargo build --release\"").ok();
+                // Use cloudbuild by default; operators may override per-daemon.
+                let build_cmd = if std::env::var("ROLLOUT_BUILD_CMD").is_ok_and(|v| !v.is_empty()) {
+                    std::env::var("ROLLOUT_BUILD_CMD").unwrap_or_default()
+                } else {
+                    let headway_ok = std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg("command -v headway >/dev/null 2>&1")
+                        .status()
+                        .map(|s| s.success())
+                        .unwrap_or(false);
+                    if headway_ok {
+                        "headway build .".to_owned()
+                    } else {
+                        "bash ~/.claude/skills/cloudbuild/cloudbuild.sh build .".to_owned()
+                    }
+                };
+                writeln!(toml_buf, "build_cmd = \"{build_cmd}\"").ok();
                 writeln!(toml_buf, "install_cmd = \"{install_cmd}\"").ok();
                 writeln!(toml_buf, "launch_cmd = \"{launch_cmd}\"").ok();
                 writeln!(toml_buf, "unit = \"{unit_name}\"").ok();

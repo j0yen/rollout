@@ -67,8 +67,39 @@ pub(crate) struct DaemonRecipe {
     pub claim_key: Option<String>,
 }
 
+/// Default build command: route through cloudbuild (Hetzner) by default.
+///
+/// The command is resolved at config-load time from (highest priority first):
+///
+/// 1. `ROLLOUT_BUILD_CMD` env var — test/override injection.
+/// 2. `headway` binary in `$PATH` — `headway build .` (structured verdict).
+/// 3. Direct `cloudbuild.sh` path — `bash ~/.claude/skills/cloudbuild/cloudbuild.sh build .`
+///
+/// Never returns `cargo build --release` as a default; that is only used when
+/// `--local-build` is explicitly passed at the CLI (escape hatch).
 fn default_build_cmd() -> String {
-    "cargo build --release".to_owned()
+    // 1. Env var override (test injection / manual override).
+    if let Ok(cmd) = std::env::var("ROLLOUT_BUILD_CMD") {
+        if !cmd.is_empty() {
+            return cmd;
+        }
+    }
+    // 2. headway binary present → prefer it.
+    if which_headway() {
+        return "headway build .".to_owned();
+    }
+    // 3. Fallback: direct cloudbuild.sh.
+    "bash ~/.claude/skills/cloudbuild/cloudbuild.sh build .".to_owned()
+}
+
+/// Check whether `headway` is available in `$PATH`.
+fn which_headway() -> bool {
+    std::process::Command::new("sh")
+        .arg("-c")
+        .arg("command -v headway >/dev/null 2>&1")
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 const fn default_grace_period() -> u64 {

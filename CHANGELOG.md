@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.13.0 — 2026-06-18
+
+rollout: default build path routes through cloudbuild (not local cargo); --local-build escape hatch logs loud warning; agorabus reload uses --build flag; all existing tests preserved
+
 ## v0.11.0 — 2026-06-14
 
 changeover-activate: rollout cycle subcommand (prove→apply-warmswap→verify) + dormant systemd timer; ROLLOUT_AUTO_ENABLED=0 default, dry-run only until user enables

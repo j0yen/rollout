@@ -1,96 +1,12 @@
-# rollout — safe rolling restart for the live fleet
+# rollout — safe rolling restart for a live daemon fleet
 
-`binstale` tells you a daemon is running stale code. Bringing it current
-is today a five-step hand-rolled dance — `cargo build --release` →
-reinstall → `kill <pid>` → relaunch → `git push` — that the run-18
-self-review deliberately *didn't* do autonomously because a careless
-restart drops the live 8-peer `wm-*` voice fleet mid-conversation.
-`rollout` makes that dance one command: it consumes `binstale scan`,
-rebuilds/reinstalls/restarts stale daemons **one at a time**, polls
-agorabus `peers` to confirm each one re-registers before moving on, and
-defaults to `plan` (no mutation) so it shows the plan before touching
-anything.
+`rollout` brings stale daemons current one at a time, confirms each one comes back before touching the next, and shows you the plan before it changes anything.
 
-## Why a tool, not a script
+## The problem
 
-1. The sequence is identical every time and error-prone by hand. A tool
-   closes the "commit landed without the rebuild+restart" gap that
-   re-staled the fleet at run 18.
-2. The reason it's deferred is **safety**, not difficulty — dropping the
-   voice fleet mid-turn is the real cost. A tool can encode the safety
-   (serialize, confirm re-registration, window-guard) that a hand-typed
-   `kill` cannot.
+`binstale` can tell you a daemon is running stale code. Acting on that is the hard part. By hand it's a five-step dance — build, reinstall, `kill <pid>`, relaunch, confirm — and the danger isn't the typing, it's the blast radius: a careless restart drops a live voice fleet mid-conversation. So the restart gets deferred, the daemon stays stale, and the gap between "commit landed" and "fleet is running it" stays open.
 
-## Commands
-
-- `rollout` / `rollout plan` — **default, non-mutating.** Print the
-  ordered list of stale daemons and the exact build/install/launch
-  commands that *would* run. Touches nothing.
-- `rollout apply` — execute, **strictly serialized** (never two daemons
-  in flight). Per daemon: build → install → record pre-restart peer set →
-  SIGTERM the old pid → wait for exit (bounded grace, then SIGKILL
-  fallback) → run `launch_cmd` → poll the healthcheck until the daemon
-  re-registers on agorabus or a timeout elapses → emit a one-line result.
-  Stops the whole run on the first daemon that fails to come back (does
-  not cascade) and exits non-zero.
-- `rollout install <binary> --dest <path>` — atomically install a
-  freshly-built binary (temp-then-rename, mode 0755) and restart the
-  owning systemd-user unit. Detects the backing unit by scanning
-  `~/.config/systemd/user/*.service` `ExecStart=` lines; uses
-  `agorabus reload --build` for `agorabus.service` and
-  `systemctl --user restart` for every other daemon. Verifies the
-  post-restart exe inode and honors `--dry-run`.
-
-### Flags
-
-- `--only <name>` — restrict the run to one daemon (e.g.
-  `--only agorabus`).
-- `--from -` — read `binstale scan --format json` from stdin instead of
-  shelling out to `binstale`. `rollout` operates only on non-`fresh`
-  verdicts.
-- `--window <duration>` — **interim** voice-fleet safety guard. Refuses
-  to restart any daemon whose name matches the voice set
-  (`wm-dialog|stt|tts`) unless the bus has shown no `wm.dialog.turn.*`
-  activity for `<duration>` (best-effort via a short agorabus subscribe
-  sample). This is the coarse interim guard; the precise turn-in-flight
-  guard is Fleet 2 (`rollout-window-guard`, depends on
-  continuity-of-conversation's session-boundary events). Examples:
-  `--window 30s`, `--window 2m`.
-
-Every flag is documented in `rollout --help`, `rollout plan --help`,
-`rollout apply --help`, and `rollout install --help`; `rollout --version`
-prints `rollout 0.2.0`.
-
-## Guarantees
-
-- **Serialized-with-verify.** `apply` never has two daemon recipes
-  mid-execution. Each daemon must re-register (healthcheck passes) before
-  the next is touched; a failure stops the run rather than cascading.
-- **No guessing how to relaunch.** A daemon with no entry in
-  `fleet.toml` is refused with a clear error and is never killed;
-  `rollout` exits non-zero listing the unknown daemons.
-- **Plan-first posture.** `plan` is the default subcommand; `apply` /
-  `install` are the only mutating paths and are never reached without an
-  explicit subcommand.
-- **rollout never pushes git.** It restarts *running* processes from
-  *already-committed* source. Pushing is a separate human/skill concern
-  (per the run-18 note and the /build commit+push convention), which
-  keeps rollout's blast radius legible.
-
-## `fleet.toml` schema
-
-A launch-recipe config at `~/.config/rollout/fleet.toml` is **required** —
-`rollout` refuses to restart a daemon it has no recipe for. Per daemon:
-
-```toml
-[daemons.agorabus]
-repo        = "/home/jsy/wintermute/agorabus"   # optional cwd for the commands
-build_cmd   = "cargo build --release"            # default
-install_cmd = "install -Dm755 target/release/agorabus ~/.local/bin/agorabus"
-launch_cmd  = "agorabus --observer &"
-healthcheck = "agorabus peers | jq -e '.[] | select(.name==\"agorabus\")'"  # default agorabus peers check
-grace_period_secs = 10                           # SIGTERM grace before SIGKILL fallback
-```
+The sequence is identical every time, which makes it a tool, not a judgment call. And the reason it was deferred is *safety*, not difficulty — which means a tool can encode the safety a hand-typed `kill` cannot: serialize the restarts, confirm re-registration before proceeding, and refuse to touch a daemon mid-turn.
 
 ## Install
 
@@ -101,14 +17,62 @@ cargo build --release
 install -Dm755 target/release/rollout ~/.local/bin/rollout
 ```
 
-Preview without mutating anything:
+## Quickstart
+
+`plan` is the default subcommand and mutates nothing. Pipe `binstale` into it to see exactly what `apply` would do:
 
 ```sh
 binstale scan --format json | rollout plan --from -
 ```
 
+It prints the ordered list of stale daemons, each with the build/install/launch commands and the restart strategy that would run. When you're ready, swap `plan` for `apply`.
+
+## Commands
+
+- **`rollout` / `rollout plan`** — default, non-mutating. Print the ordered restart plan; touch nothing. A daemon with no recipe in `fleet.toml` fails the plan up front rather than being killed later.
+- **`rollout apply`** — execute, strictly serialized: never two daemons in flight. Per daemon — build → install → restart → poll the healthcheck until it re-registers on agorabus (or times out) → one-line result. The first daemon that fails to come back stops the run and exits non-zero; failures don't cascade. Voice-set daemons (`wm-dialog|stt|tts`) are deferred, never restarted blind, when the bus shows turn activity or is unreachable.
+- **`rollout install <binary> --dest <path>`** — atomically install a freshly-built binary (temp-then-rename, mode 0755) and restart the systemd-user unit whose `ExecStart` points at that dest. Uses `agorabus reload --build` for agorabus and `systemctl --user restart` otherwise; verifies the post-restart exe.
+- **`rollout fleet-gen`** — derive a candidate `fleet.toml` from the live daemon set by cross-referencing `binstale` against `~/.config/systemd/user/*.service`. Writes a `.proposed` file for review; never writes `fleet.toml` directly.
+- **`rollout prove` / `rollout record-proof`** — seed and update the per-daemon proof ledger (`~/.config/rollout/proofs.json`) from `changeover probe` output. The ledger is what `apply --auto` consults.
+- **`rollout cycle`** — automated prove → apply (warm-swap only) → verify loop, gated by `ROLLOUT_AUTO_ENABLED`. Unset or `0` (the default), it runs dry: probe, plan, would-verify, zero restarts.
+
+Every flag is documented in `--help` for each subcommand. `rollout --version` prints the crate version.
+
+## How it works
+
+Two restart strategies:
+
+- **Hard restart** — SIGTERM the old pid, wait a bounded grace period (SIGKILL fallback), relaunch, then poll the healthcheck. There's a brief window where no instance holds the daemon's claim.
+- **Warm-swap** — start the successor *first* via `systemd-run --user --scope`, wait for it to contend for the daemon's agorabus claim, stop the predecessor, then confirm exactly one holder remains. No window where the claim is unheld. `cycle` uses warm-swap only and skips any daemon that has no warm-swap path rather than hard-restarting it.
+
+Three standing guarantees:
+
+- **Serialized with verify.** `apply` never has two daemon recipes mid-execution; each must re-register before the next is touched.
+- **No guessing how to relaunch.** A daemon with no `fleet.toml` recipe is refused with a clear error and never killed.
+- **rollout never pushes git.** It restarts *running* processes from *already-committed* source. Pushing stays a separate, human-gated step — which keeps rollout's blast radius legible.
+
+## `fleet.toml`
+
+A launch-recipe config at `~/.config/rollout/fleet.toml` is required; `rollout` refuses any daemon it has no recipe for. Per daemon:
+
+```toml
+[daemons.agorabus]
+repo        = "/home/jsy/wintermute/agorabus"   # optional cwd for the commands
+build_cmd   = "cargo build --release"
+install_cmd = "install -Dm755 target/release/agorabus ~/.local/bin/agorabus"
+launch_cmd  = "agorabus --observer &"
+healthcheck = "agorabus peers | jq -e '.[] | select(.name==\"agorabus\")'"
+grace_period_secs = 10                           # SIGTERM grace before SIGKILL fallback
+```
+
+`rollout fleet-gen` produces a first draft of this file from live state.
+
+## Status
+
+Used to restart the wintermute daemon fleet. The `cycle` auto-path ships dormant: `ROLLOUT_AUTO_ENABLED` defaults off and the `changeover-activate` timer is installed but not enabled, so unattended live restarts require a deliberate opt-in.
+
 ## License
 
-Licensed under either of MIT or Apache-2.0 at your option.
+Licensed under MIT OR Apache-2.0 at your option.
 
 Copyright (c) 2026 Joe Yen.
